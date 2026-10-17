@@ -32,8 +32,10 @@ export default function WorkerDetail() {
     const control = new AbortController()
     setLoadError('')
     request<Tracking>(`/api/recordings/${id}/tracking`,{signal:control.signal}).then(setTracking).catch(e=>{if(e.name!=='AbortError')setLoadError(e.message)})
-    request<Visuals>(`/api/recordings/${id}/visuals`,{signal:control.signal}).then(setPoses).catch(()=>setPoses(undefined))
-    return ()=>control.abort()
+    let retry: number | undefined
+    const loadPose=()=>request<Visuals>(`/api/recordings/${id}/visuals`,{signal:control.signal}).then(setPoses).catch(()=>{if(!control.signal.aborted){setPoses(undefined);retry=window.setTimeout(loadPose,4000)}})
+    void loadPose()
+    return ()=>{control.abort();window.clearTimeout(retry)}
   },[id,r?.status,jobVersion])
   useEffect(()=>{setTime(0);setClipId('');setTracking(undefined);setPoses(undefined);setMode('annotated')},[id])
   useEffect(()=> {
@@ -77,7 +79,7 @@ export default function WorkerDetail() {
     <div className="flex flex-wrap items-center gap-3"><Link to="/"><Button variant="secondary" size="sm"><ArrowLeft className="size-4"/>Site</Button></Link><h1 className="text-xl font-semibold tracking-tight">{r.demo?'Warehouse simulation':r.filename.replace(/\.mp4$/i,'').replaceAll('-',' ')}</h1><StatusPill tone={flagged.length?'warn':'neutral'}>{flagged.length?`${flagged.length} to review`:'Analysis ready'}</StatusPill></div>
     {(error||loadError||message)&&<p role="status" className="rounded-xl border border-hairline bg-white px-4 py-2 text-sm">{error||loadError||message}</p>}
     <div className="flex items-center gap-2 text-xs text-muted-foreground"><Film className="size-3.5"/>Recorded footage<span>·</span>{r.duration.toFixed(1)}s<span>·</span>{r.task}<span>·</span>{r.demo?'Simulation':r.captured_at?new Date(r.captured_at*1000).toLocaleString():'Capture date unavailable'}</div>
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_328px]">
+    <div className="grid gap-4 min-[1000px]:grid-cols-[minmax(0,1fr)_300px]">
       <div className="min-w-0 space-y-4">
         <section ref={panel} className="overflow-hidden rounded-[18px] border border-hairline bg-white p-2 shadow-soft">
           <div className="relative w-full overflow-hidden rounded-[12px] bg-[#14202a]" style={{aspectRatio:`${r.width}/${r.height}`}}>
@@ -100,14 +102,14 @@ export default function WorkerDetail() {
         </section>
         {tracking&&<Timeline tracking={tracking} duration={r.duration} time={time} seek={seek} windows={windows} state={state}/>}
       </div>
-      <div className="min-w-0 space-y-4">
-        <SectionCard title="Check-in overview" className="relative" footer="Visible observations · human review required">
+      <div className="worker-sidebar min-w-0 space-y-4">
+        <SectionCard title="Check-in overview" className="worker-verdict relative" footer="Visible observations · human review required">
           <HalftoneAccent corner="tr" className="opacity-40"/>
           <div className="relative flex items-center gap-4"><div className="relative grid size-[72px] shrink-0 place-items-center"><svg viewBox="0 0 36 36" className="absolute inset-0 -rotate-90"><circle cx="18" cy="18" r="16" fill="none" stroke="#EFEFED" strokeWidth="2.5"/><circle cx="18" cy="18" r="16" fill="none" stroke={flagged.length?toneColor.warn:toneColor.neutral} strokeWidth="2.5" strokeLinecap="round" strokeDasharray={`${tracks.length?flagged.length/tracks.length*100.5:0} 100.5`}/></svg><span className="text-2xl font-semibold tabular-nums">{flagged.length}</span></div><div><h2 className="text-xl font-semibold tracking-tight">{flagged.length?'Take a closer look':'No pending flags'}</h2><p className="mt-1 text-xs text-muted-foreground">{flagged.length?'Review the scene before a check-in.':'No automatic alert in this recording.'}</p></div></div>
           <div className="relative mt-4 flex justify-between border-t border-hairline pt-3 text-xs"><span className="text-muted-foreground">Observed tracklets</span><span>{tracks.length}</span></div>
         </SectionCard>
         <SectionCard title="Workers" action={<span className="text-xs tabular-nums text-muted-foreground">{tracks.length} tracked</span>} bodyClassName="px-3 pb-3">
-          <div className="max-h-[420px] space-y-2 overflow-y-auto">{tracks.map(t=>{
+          <div className="worker-list max-h-[420px] space-y-2 overflow-y-auto">{tracks.map(t=>{
             const rows=recordAnalyses.filter(a=>a.track_key===t.id),count=rows.filter(pending).length
             const thumb=state.clips.find(c=>c.track_key===t.id)?.thumbnail_path
             return <button key={t.id} onClick={()=>select(t)} aria-pressed={t.id===selected?.id} className={cn('w-full rounded-[14px] border bg-white p-3 text-left transition hover:bg-[#FAFAF9]',t.id===selected?.id?'border-[#9b9b94] shadow-soft':'border-hairline')}>

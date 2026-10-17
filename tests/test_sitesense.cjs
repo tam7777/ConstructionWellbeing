@@ -17,7 +17,7 @@ assert.equal(items.filter(i=>i.libraryId&&['ready','review'].includes(i.status))
 assert.equal(items.filter(i=>i.status==='unanalysed').length,78);
 assert.equal(items.find(i=>i.id==='l0').reviewCount,1);
 assert.equal(items.find(i=>i.id==='l0').tracks.length,1);
-assert.equal(items.find(i=>i.id==='demo').poster,'/media/demo/normalized.mp4'.replace('normalized.mp4','')? '':'');
+assert.equal(items.find(i=>i.id==='demo').video,'/media/demo/normalized.mp4');
 state.analyses[0].status='stale';
 assert.equal(pending(state.analyses[0]),false);
 assert.equal(buildItems(state,library).find(i=>i.id==='l0').status,'ready');

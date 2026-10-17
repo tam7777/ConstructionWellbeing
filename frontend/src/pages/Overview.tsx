@@ -98,7 +98,7 @@ export default function Overview() {
   const segOn = "bg-white text-ink shadow-soft border border-hairline"
 
   return (
-    <div className="space-y-6">
+    <div className="overview-page space-y-6">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight text-ink">{clipsOnly ? "Clips" : "Site overview"}</h1>
@@ -109,19 +109,19 @@ export default function Overview() {
       {error && <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-hairline bg-white px-4 py-3 text-sm text-muted-foreground"><span>{error}</span><Chip onClick={() => void refresh()}>Retry</Chip></div>}
       {!clipsOnly && (
         <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="overview-stats grid grid-cols-2 gap-3 min-[650px]:grid-cols-4">
             <StatCard label="Videos available" value={state ? stats.available : "—"} sub={`${stats.construction} construction · ${stats.factory} factory`} />
             <StatCard label="Videos analysed" tone="ok" value={state ? stats.analysed : "—"} sub={stats.demo ? `Plus ${stats.demo} warehouse demo${stats.demo === 1 ? "" : "s"}` : "From the footage library"} />
             <StatCard label="Worker tracks" value={state ? stats.tracks : "—"} sub={`Across ${stats.recordings} recordings`} />
             <StatCard label="Needs review" tone="warn" value={state ? stats.reviewTracks : "—"} unit="tracks" sub={`${stats.windows} flagged observation ${stats.windows === 1 ? "window" : "windows"}`} />
           </div>
-          <div className="grid gap-4 lg:grid-cols-5">
-            <SectionCard title="Analysis across footage" menu={false} className="lg:col-span-2" footer={`${stats.analysed} library videos analysed${stats.demo ? ` · ${stats.demo} demo` : ""}`} footerAction={<Chip onClick={() => changeFilter("review")}>View flags</Chip>}>
+          <div className="grid gap-4 min-[1000px]:grid-cols-5">
+            <SectionCard title="Analysis across footage" menu={false} className="overview-analysis min-[1000px]:col-span-2" footer={`${stats.analysed} library videos analysed${stats.demo ? ` · ${stats.demo} demo` : ""}`} footerAction={<Chip onClick={() => changeFilter("review")}>View flags</Chip>}>
               <div className="text-[28px] font-semibold tabular-nums text-ink">{stats.available ? Math.round(stats.analysed / stats.available * 100) : 0}%<span className="ml-2 text-sm font-normal text-muted-foreground">analysed</span></div>
               <StackedBar segments={segments} className="mt-4" />
               <Legend segments={segments} className="mt-4" />
             </SectionCard>
-            <SectionCard title="Who to check in with" menu={false} className="lg:col-span-3" bodyClassName="px-2 pb-2" action={attention.length > 0 ? <span className="text-xs tabular-nums text-muted-foreground">{attention.length} tracks</span> : undefined}>
+            <SectionCard title="Who to check in with" menu={false} className="min-[1000px]:col-span-3" bodyClassName="px-2 pb-2" action={attention.length > 0 ? <span className="text-xs tabular-nums text-muted-foreground">{attention.length} tracks</span> : undefined}>
               {state && attention.length === 0 && <div className="flex min-h-48 flex-col items-center justify-center px-4 text-center"><p className="text-sm text-ink">No pending review flags</p><p className="mt-1 text-xs text-muted-foreground">Open an analysed clip to inspect its observations.</p></div>}
               {!state && <p className="px-3 py-6 text-sm text-muted-foreground">Loading recorded observations…</p>}
               {attention.slice(0, 5).map(({ track, flags, flag, clip, item }) => (
