@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const context=vm.createContext({});
+for(const file of ['control-center.js','vision.js'])vm.runInContext(fs.readFileSync(path.join(__dirname,'../warehouse/static',file),'utf8'),context);
+vm.runInContext(`points=Array.from({length:33},()=>[10,20,.9]);points[12]=[999,999,.1];`,context);
+assert.equal(vm.runInContext("renderPoseMarkup({keypoints:points},false).includes('999')",context),false,'Low-confidence joints and their limbs must not render');
+assert.equal(vm.runInContext('visibleJoint([Infinity,2,.9])',context),false);
+assert.equal(vm.runInContext('sampleAtTime([{time:0,keypoints:points},{time:2,keypoints:points}],1,6)',context),null,'Pose inference gaps must remain gaps');
+vm.runInContext(`samples=[0,.1,1.5,1.6].map(time=>({time,bbox:[10,20,30,40]}));`,context);
+assert.equal(vm.runInContext('trailSamples(samples,1.6).at(-1).time',context),1.6,'A motion trail must end at its latest detection after a gap');
+assert.equal(vm.runInContext('trailSamples(samples,1.6)[0].time',context),1.5,'A motion trail must not bridge a missing detection interval');
+vm.runInContext("sceneMode='raw'",context);
+assert.equal(vm.runInContext('renderVisionLayers({}, {}, 0)',context),'','Raw view must contain no overlays');
+console.log('Pose confidence, missing-frame gaps, motion trails and raw view checks passed');

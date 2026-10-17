@@ -1,12 +1,14 @@
 import hashlib
 import math
+import os
+import shutil
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import media
+from . import media, visuals
 from .core import retrieve
 from .services import ServiceError
 from .tracking import track_people
@@ -102,6 +104,49 @@ class Pipeline:
                            {'filename': filename, 'source': 'user upload', 'camera': 'Uploaded camera',
                             'location': 'User supplied', 'demo': False}, task, captured_at))
 
+    def submit_library(self, source, item):
+        def action(job):
+            existing = next((r for r in self.store.all('recordings')
+                             if r.get('library_id') == item['id'] and r.get('status') == 'ready'), None)
+            if existing:
+                return {'recording_id': existing['id'], 'cached': True}
+            if source.stat().st_size > 80_000_000:
+                raise ValueError('This recording exceeds the 80 MB processing limit.')
+            media.probe(source)
+            directory = self.root / uid()
+            directory.mkdir()
+            copy = directory / 'source.mp4'
+            shutil.copyfile(source, copy)
+            provenance = {'filename': item['filename'], 'source': item['relative_path'],
+                          'camera': 'Dataset recording', 'location': item['collection'],
+                          'demo': False, 'source_kind': 'dataset', 'library_id': item['id'],
+                          'capture_time_known': False}
+            return self.process(job, directory.name, copy, provenance,
+                                item['collection'].lower() + ' activity', None)
+        return self.submit('Dataset · ' + item['filename'], action)
+
+    def create_visuals(self, job, recording):
+        self.store.update('jobs', job, recording_id=recording['id'])
+        self.stage(job, 'OpenCV pose inference', 5, 'MediaPipe33 estimates on observed ByteTrack person crops; low-confidence joints are hidden.')
+        tracks = [t for t in self.store.all('tracks') if t['recording_id'] == recording['id']]
+        try:
+            visuals.save_artifact(self.root, recording, visuals.empty_artifact(recording, 'processing'))
+            return visuals.generate_artifact(self.root, recording, tracks,
+                progress=lambda value: self.stage(job, 'OpenCV pose inference', value))
+        except Exception:
+            visuals.save_artifact(self.root, recording, visuals.empty_artifact(recording, 'failed',
+                'Optional pose inference was unavailable. Person tracking and Cosmos evidence are still available.'))
+            raise ValueError('Optional pose inference was unavailable. Check the installed OpenCV Zoo model and retry.') from None
+
+    def submit_visuals(self, recording_id):
+        recording = self.store.get('recordings', recording_id)
+        if not recording:
+            raise KeyError(recording_id)
+        def action(job):
+            artifact = self.create_visuals(job, recording)
+            return {'recording_id': recording_id, 'poses': artifact['statistics']['accepted']}
+        return self.submit('Generate pose overlay', action)
+
     def process(self, job, recording_id, source, provenance, task, captured_at):
         directory = source.parent
         fingerprint = hashlib.sha256(source.read_bytes()).hexdigest()
@@ -115,7 +160,7 @@ class Pipeline:
         recording = dict(provenance, id=recording_id, sha256=fingerprint, task=task,
                          captured_at=captured_at, imported_at=time.time(), status='processing',
                          media_path=str(normalized.relative_to(self.root)),
-                         window_seconds=2 if provenance['demo'] else 5, **info)
+                         window_seconds=2 if provenance['demo'] else 3 if provenance.get('source_kind') == 'dataset' else 5, **info)
         self.store.put('recordings', recording)
         self.store.update('jobs', job, recording_id=recording_id)
         self.stage(job, 'YOLO person detection', 16, 'Shared YOLO11s service; all frames, people only for tracking.')
@@ -142,6 +187,15 @@ class Pipeline:
                        'Filter identity, task and earlier time first; then rank by cosine similarity.')
             self.analyze_clip(job, clip)
         self.store.update('recordings', recording_id, status='ready')
+        # Optional decoration runs after the evidence pipeline has succeeded.
+        # An absent model or inference failure cannot invalidate that result.
+        if os.environ.get('WAREHOUSE_POSE_AUTO', '1') != '0' and visuals.model_path().is_file():
+            try:
+                self.create_visuals(job, self.store.get('recordings', recording_id))
+            except Exception:
+                # Disk/model failures in this optional overlay cannot turn a
+                # completed Cosmos evidence job into a failed import.
+                pass
         return {'recording_id': recording_id, 'tracks': len(usable), 'windows': len(created), 'cached': False}
 
     def index_windows(self, job, recording, track, window_seconds, active=True):
@@ -169,6 +223,7 @@ class Pipeline:
                         started_at=(recording.get('captured_at') or 0) + start,
                         ended_at=(recording.get('captured_at') or 0) + start + duration,
                         offset=start, duration=duration, demo=recording['demo'], vector=vector, active=active,
+                        capture_time_known=recording.get('captured_at') is not None,
                         media_path=str(crop.relative_to(self.root)), context_path=str(context.relative_to(self.root)),
                         thumbnail_path=str(thumb.relative_to(self.root)), **visibility)
             self.store.put('clips', item)

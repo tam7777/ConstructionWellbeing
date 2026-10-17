@@ -32,6 +32,7 @@ def retrieve(query, candidates, limit=6):
                       and candidate.get('track_id') is not None
                       and candidate.get('track_id') == query.get('track_id'))
         confirmed_person = (query.get('identity_confirmed') and candidate.get('identity_confirmed')
+                            and query.get('capture_time_known', True) and candidate.get('capture_time_known', True)
                             and not query.get('demo') and not candidate.get('demo')
                             and query.get('worker_id') is not None
                             and query.get('worker_id') == candidate.get('worker_id'))

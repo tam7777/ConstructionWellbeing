@@ -14,6 +14,9 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from .pipeline import BusyError, Pipeline, uid
 from .services import Services
 from .store import Store
+from .library import VideoLibrary
+from .catalog_media import create_router
+from . import visuals
 
 STATIC = Path(__file__).parent / 'static'
 
@@ -35,7 +38,7 @@ class BrowserBoundary:
             if message['type'] == 'http.response.start':
                 message = dict(message, headers=list(message.get('headers', [])) + [
                     (b'x-content-type-options', b'nosniff'), (b'referrer-policy', b'no-referrer'),
-                    (b'content-security-policy', b"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"),
+                    (b'content-security-policy', b"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"),
                 ])
             await send(message)
 
@@ -82,12 +85,14 @@ class Review(BaseModel):
     note: str = Field(default='', max_length=1000)
 
 
-def create_app(root=None, services=None):
+def create_app(root=None, services=None, library_root=None):
     root = Path(root or os.environ.get('WAREHOUSE_DATA', Path(__file__).resolve().parent.parent / 'data')).resolve()
     store = Store(root / 'warehouse.sqlite')
     pipeline = Pipeline(root, store, services if services is not None else Services())
-    app = FastAPI(title='WorkSight — warehouse evidence', docs_url=None, redoc_url=None)
+    library = VideoLibrary(library_root or '/home/mmiki8052/data/worker-wellbeing')
+    app = FastAPI(title='SiteSense — worker video evidence', docs_url=None, redoc_url=None)
     app.state.store, app.state.pipeline = store, pipeline
+    app.include_router(create_router(library, root))
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost', 'testserver'])
     app.add_middleware(UploadBodyLimit)
     app.add_middleware(BrowserBoundary)
@@ -121,9 +126,45 @@ def create_app(root=None, services=None):
     def health():
         return {'services': pipeline.services.health()}
 
+    @app.get('/api/library')
+    def video_library():
+        return {'videos': library.items()}
+
+    @app.post('/api/library/{identifier}/analyse', status_code=202)
+    def analyse_library(identifier: str):
+        source = library.resolve(identifier)
+        item = next((r for r in library.items() if r['id'] == identifier), None)
+        if source is None or item is None:
+            raise HTTPException(404, 'Dataset video not found.')
+        return pipeline.submit_library(source, item)
+
+    @app.get('/api/recordings/{recording_id}/tracking')
+    def recording_tracking(recording_id: str):
+        recording = store.get('recordings',recording_id)
+        if not recording:
+            raise HTTPException(404,'Recording not found.')
+        return {'recording_id':recording_id,
+                'width':recording['width'],'height':recording['height'],
+                'fps':recording['fps'],'duration':recording['duration'],
+                'tracks':[t for t in store.all('tracks') if t['recording_id']==recording_id]}
+
     @app.post('/api/sample', status_code=202)
     def sample():
         return pipeline.submit_sample()
+
+    @app.get('/api/recordings/{recording_id}/visuals')
+    def recording_visuals(recording_id: str):
+        recording = store.get('recordings', recording_id)
+        if not recording:
+            raise HTTPException(404, 'Recording not found.')
+        return visuals.read_artifact(root, recording)
+
+    @app.post('/api/recordings/{recording_id}/visuals', status_code=202)
+    def generate_recording_visuals(recording_id: str):
+        try:
+            return pipeline.submit_visuals(recording_id)
+        except KeyError:
+            raise HTTPException(404, 'Recording not found.') from None
 
     @app.post('/api/upload', status_code=202)
     async def upload(file: UploadFile = File(...), task: str = Form(...), captured_at: str = Form(...)):

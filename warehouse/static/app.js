@@ -31,7 +31,7 @@ function setVideo(id, path, poster) {
   }
 }
 const windowLabel = clip => `${clip.offset.toFixed(1)}–${(clip.offset+clip.duration).toFixed(1)}s`;
-const dateLabel = (clip) => clip.demo ? 'Sample · relative recording time' : new Date(clip.started_at*1000).toLocaleString([], {dateStyle:'medium',timeStyle:'short'});
+const dateLabel = (clip) => clip.demo ? 'Sample · relative recording time' : clip.capture_time_known===false ? 'Dataset · relative recording time' : new Date(clip.started_at*1000).toLocaleString([], {dateStyle:'medium',timeStyle:'short'});
 function analysisFor(clip) { return state.analyses.find(a => a.clip_id === clip?.id); }
 
 function pairDuration() {
@@ -124,7 +124,7 @@ function renderPipeline() {
   }
 }
 function renderRecordings() {
-  $('recording-rows').innerHTML = state.recordings.length ? [...state.recordings].reverse().map((r,i)=>`<tr><td title="${esc(r.filename)}">${r.demo?'Warehouse sample':esc(r.filename)}<small>${esc(r.id.slice(0,8))} · ${r.demo?'Supplied simulation · no real capture date':new Date(r.captured_at*1000).toLocaleString()}</small></td><td>${esc(r.location)}<small>${esc(r.task)}</small></td><td>${r.duration.toFixed(1)}s</td><td>${r.processed_tracks ?? '—'}</td><td><span class="recording-status ${r.status==='failed'?'failed':''}">${esc(r.status.replaceAll('_',' '))}</span></td><td><button class="text-button recording-open" data-id="${esc(r.id)}">Open ↗</button></td></tr>`).join('') : '<tr><td colspan="6" class="table-empty">No recordings imported yet.</td></tr>';
+  $('recording-rows').innerHTML = state.recordings.length ? [...state.recordings].reverse().map((r,i)=>`<tr><td title="${esc(r.filename)}">${r.demo?'Warehouse sample':esc(r.filename)}<small>${esc(r.id.slice(0,8))} · ${r.demo?'Supplied simulation · no real capture date':r.captured_at==null?'Capture date unavailable':new Date(r.captured_at*1000).toLocaleString()}</small></td><td>${esc(r.location)}<small>${esc(r.task)}</small></td><td>${r.duration.toFixed(1)}s</td><td>${r.processed_tracks ?? '—'}</td><td><span class="recording-status ${r.status==='failed'?'failed':''}">${esc(r.status.replaceAll('_',' '))}</span></td><td><button class="text-button recording-open" data-id="${esc(r.id)}">Open ↗</button></td></tr>`).join('') : '<tr><td colspan="6" class="table-empty">No recordings imported yet.</td></tr>';
   document.querySelectorAll('.recording-open').forEach(button=>button.addEventListener('click',()=>{
     const track=state.tracks.find(t=>t.recording_id===button.dataset.id);
     if(track){selectTrack(track.id); $('evidence').scrollIntoView({behavior:'smooth',block:'start'});}else toast('This recording has no usable person tracks yet.');
@@ -149,6 +149,7 @@ function renderEvidence() {
   const key=JSON.stringify([track,current,analysis,reference,videoView]);
   $('identity-save').disabled=state.busy;
   $('review-save').disabled=state.busy;
+  renderControlCenter(current,track,analysis);
   if(key===renderedKey) return;
   pausePair();
   renderedKey=key;
@@ -199,7 +200,7 @@ function renderDetailedReport(analysis,clip) {
   return `<div class="report-top"><strong>What changed in the footage</strong><span class="report-badge ${report.review_priority==='review'?'review':''}">${analysis.reviewed?'✓ REVIEWED':labels[report.review_priority]}</span></div><p class="report-summary">${esc(report.human_review_summary)}</p><div class="small-label">VISIBLE OBSERVATIONS</div><ul class="evidence-list">${report.observable_changes.map(item=>`<li>${esc(item)}</li>`).join('')}</ul><div class="report-context"><strong>Task & context</strong><br>${esc(report.task_context)}</div><details><summary>Evidence limits & uncertainty (${report.limitations.length})</summary><ul class="limitations">${report.limitations.map(item=>`<li>${esc(item)}</li>`).join('')}</ul></details><div class="scope-note">${clip.demo?'DEMO SCOPE · The earlier and current windows are from one short simulated warehouse scene. They do not establish a trend over days or months.':analysis.within_recording?'SCOPE · This comparison is within one recording.':'SCOPE · Cross-recording identity was confirmed by a human.'} Model observations are unvalidated and require review.</div>`;
 }
 function renderTimeline(current,track) {
-  const history=state.clips.filter(c=>c.track_key===track.id || (!c.demo&&!current.demo&&track.identity_confirmed&&c.identity_confirmed&&c.worker_id===track.worker_id&&c.task===current.task)).sort((a,b)=>b.started_at-a.started_at);
+  const history=state.clips.filter(c=>c.track_key===track.id || (!c.demo&&!current.demo&&c.capture_time_known!==false&&current.capture_time_known!==false&&track.identity_confirmed&&c.identity_confirmed&&c.worker_id===track.worker_id&&c.task===current.task)).sort((a,b)=>b.started_at-a.started_at);
   $('history-count').textContent=history.length;
   $('timeline').innerHTML=history.map(clip=>{
     const a=analysisFor(clip);
@@ -212,7 +213,7 @@ function renderTimeline(current,track) {
 }
 async function refresh() {
   if(polling)return;polling=true;
-  try {state=await api('/api/state');renderMetrics();renderPipeline();renderRecordings();renderAlerts();renderEvidence();}
+  try {state=await api('/api/state');renderMetrics();renderPipeline();renderRecordings();renderAlerts();renderEvidence();renderOverview();}
   catch(error) {$('pipeline-title').textContent='VM connection unavailable';$('pipeline-detail').textContent='Check the SSH tunnel. Retrying automatically.';}
   finally{polling=false;}
 }
@@ -267,4 +268,4 @@ $('upload-form').addEventListener('submit',event=>{event.preventDefault();action
   data.set('captured_at',new Date(data.get('captured_at')).toISOString());
   await api('/api/upload',{method:'POST',body:data});$('upload-dialog').close();selectedTrack=null;selectedClip=null;toast('Recording uploaded. Processing has started.');
 });});
-refresh();health();setInterval(refresh,2500);
+initializeControlCenter();initializeVision();initializeCatalog();initializeOverview();initializeWorkspace();refresh();health();setInterval(refresh,2500);

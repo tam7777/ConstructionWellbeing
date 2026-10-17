@@ -1,10 +1,32 @@
-# WorkSight — warehouse prototype
+# SiteSense — worker video evidence
+
+The deployed React frontend directly reuses the team's [hack2](https://github.com/londrwus/hack2/) visual system, kit, sidebar, cards, upload hero and detail composition. Its actual API adapter connects to this project's existing YOLO/ByteTrack/Cosmos/OpenCV pipeline. Source provenance and build instructions are in `frontend/README.md`.
+
+All 85 dataset videos remain available: 14 construction and 71 factory. Seven dataset recordings and the separate warehouse simulation have now completed the full pipeline, producing 19 recording-scoped tracklets. These counts are derived from the API. Other videos can be previewed and analysed directly from the library. A tracklet is not a verified unique worker across sessions.
+
+Select a worker to open their recording, actual frame-aligned boxes and confidence-gated OpenCV poses. Annotated, Raw and Skeleton modes, movement trails, frame stepping, fullscreen and PNG snapshots are available. The selected worker's earlier/current videos, synchronized playback, eligible earlier matches and all observation windows appear below. Seeking selects the corresponding evidence; invalidated mappings hide old reports and references until recomputed. The UI presents human-review observations without inventing fatigue, height, job-fitness or health scores.
+
+Reference-video UI update: a light sidebar workspace, a searchable visual catalog of all 85 dataset files plus the warehouse demo, collection/review filters, raw-video preview dialogs, and direct worker review. The player now includes real OpenCV pose overlays, Annotated/Raw/Skeleton views, optional motion trails, a scrubber, frame stepping, playback speed, fullscreen and annotated PNG snapshots. Earlier matches and all observation windows remain below the player.
+
+Pose uses the official Apache-2.0 OpenCV Zoo MediaPipe model through OpenCV DNN on the VM CPU. It adds no Torch runtime. The 5.3 MiB model is checksum-verified by `python -m tools.download_pose_model`; model weights stay outside Git, and the license is in `docs/pose-model-LICENSE`. Pose is sampled at 6 fps from existing ByteTrack person crops and served separately at `/api/recordings/{id}/visuals`. Confidence-gated joints use the normalized video's pixel coordinates; gaps remain gaps. This is a 2D visualization, without depth, calibrated height or medical measurements. The construction clip produced 297 accepted person-pose samples in 3.13 seconds; the warehouse clip produced 59 in 0.67 seconds. Future video ingests add this optional layer after successful Cosmos comparison, and pose failure preserves those comparisons.
+
+Regenerate overlays on the VM with `.venv/bin/python -m tools.generate_visuals RECORDING_ID --fps 6`. Set `WAREHOUSE_POSE_AUTO=0` to disable automatic inference. Visual cache refresh is keyed to the recording's jobs so a browser sees pose completion without reloading. All 85 real poster images are cached separately; unanalysed videos do not receive worker counts or review judgments.
+
+The interface now opens with a management overview. Select a worker to open a dedicated review screen with the full recording, real frame-aligned ByteTrack boxes, worker review cards and a seekable evidence timeline. Supporting retrieved clips and the complete observation history appear below. Counts are derived from actual indexed workers and model review flags; no wellbeing, fatigue or medical scores are fabricated.
 
 A working video evidence pipeline on the assigned lab VM. No model training or local GPU is required. The VM orchestrates shared GPU services. App code and persisted results are in `/home/mmiki8052/warehouse-prototype`.
+
+The VM library picker lists all 85 downloaded videos (14 construction and 71 factory) from `/home/mmiki8052/data/worker-wellbeing`. Select a video and choose Analyse; completed recordings can be reopened without model calls. Source files remain untouched. Each dataset recording is indexed into three-second windows. Capture dates and cross-session identities are unverified, so dataset comparisons and history stay within the continuous track, even after assigning a worker ID.
+
+Verified real construction run: `02-rooftop-crew-closer.mp4`, 15.3 seconds normalized, 459 frames, four usable tracks, 19 embedded windows, 15 Cosmos comparison reports, four initial baselines and two model review flags. The full run took 95.4 seconds. These flags are model observations, not labelled wellbeing outcomes. Other library videos are available for processing on selection; listing 85 files does not mean all 85 are indexed.
 
 The management view now centers the videos: a compact review queue, large current/reference playback, shared play/pause/seek, Scene/Person switching, a playable gallery of earlier matches and a five-clip visual history. Long reports and operational controls are collapsed under Details. The included ten-second scene is now indexed as five two-second windows; the latest window has four eligible earlier matches. These are portions of one simulated recording, not separate historical sessions. Review flags suggest a human check-in and do not diagnose wellbeing.
 
 ## Open the dashboard
+
+Shared VM link: **https://deposits-hub-greatly-region.trycloudflare.com**. The shared dashboard is public; anyone with this link can use it without signing in. The VM runs the tunnel and loopback adapter as detached processes, so the laptop and its SSH connection can close. The hostname is temporary and changes after recreating the tunnel. Run `.venv/bin/python start_sharing.py` on the VM to reopen the existing sharing state. Files `sharing-processes.json` and the two `sharing-*.log` files record this session. `tools/cloudflared` is the official Linux binary, downloaded with its GitHub release SHA-256 digest verified. No system package was installed.
+
+The adapter forwards to the existing app on port 8765 and preserves video Range requests. Only the exact generated public origin can make browser writes; foreign origins are rejected. Cloudflare Access cookies and identity headers are not forwarded to the app. The existing local laptop URL below also continues to work.
 
 On the laptop, keep an SSH tunnel running:
 
@@ -30,7 +52,7 @@ cd /home/mmiki8052/warehouse-prototype
 `start.py` detaches the process from the SSH session and records `server.pid`; it does not install a system service. To restart, verify that the recorded PID belongs to this project's `serve.py` before stopping it, then run `start.py` again. Server logs are in `server.log`. Do not run multiple app workers: the single-worker queue deliberately limits shared GPU calls.
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m pytest -q
 ```
 
 Dependencies are private to `.venv`. The initial setup used Python's `venv --without-pip` and the official `https://bootstrap.pypa.io/pip/pip.pyz` because Ubuntu's ensurepip is unavailable. No apt/system package installation. `requirements.txt` describes runtime requirements; `requirements.lock` records the tested full environment. Supervision is pinned to 0.26.1 because later releases removed its ByteTrack API ([official versioned reference](https://supervision.roboflow.com/0.26.1/trackers/)). FFmpeg/FFprobe are preinstalled on the VM.
@@ -62,4 +84,4 @@ For actual longitudinal use, supply repeated recordings with trustworthy timesta
 
 Useful endpoints: `GET /api/state`, `GET /api/health`, `POST /api/sample`, `POST /api/upload`, `POST /api/tracks/{id}/identity`, `POST /api/tracks/{id}/compare`, `POST /api/analyses/{id}/review`. Machine-readable API schema: `/openapi.json`. No external scripts or CDN assets are needed for the dashboard.
 
-Dashboard logic regressions can also be run with Node 20+ on a development laptop: `node tests/test_dashboard.cjs`. Node is not required on the VM. The browser layout was not visually inspected because the user stopped Windows Computer Use; API responses, video streaming, JavaScript syntax and the dashboard state transitions were checked separately.
+Frontend adapter regressions can be run on the development laptop with `node tests/test_sitesense.cjs`. The React build passes TypeScript and Vite checks. Public browser checks cover actual video playback, worker selection, time-aligned evidence, Raw/Skeleton modes and synchronized comparison videos. The backend suite has 39 passing tests. Node is not required on the VM; compiled assets are served from `warehouse/static/team-ui/`, with the built index copied to `warehouse/static/index.html`. Hash routes work through the existing FastAPI root. The CSP permits local inline React styles and local blob video previews; executable scripts remain restricted to the app origin.

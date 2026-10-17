@@ -10,6 +10,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 node_modules/
+frontend/dist/
 .DS_Store
 Thumbs.db
 .env
@@ -39,3 +40,6 @@ work/
 outputs/
 docs/plan.md
 docs/progress.md
+tools/cloudflared
+sharing-origin.json
+sharing-processes.json

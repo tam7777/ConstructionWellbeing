@@ -40,6 +40,18 @@ class ApiTests(unittest.TestCase):
         response = self.client.post('/api/tracks/missing/identity', json={'worker_id': 'a', 'task': 'lifting'})
         self.assertEqual(response.status_code, 404)
 
+    def test_recording_tracking_contains_only_its_own_tracks(self):
+        store=self.app.state.store
+        store.put('recordings',{'id':'r','width':1280,'height':720,'fps':30,'duration':10})
+        store.put('tracks',{'id':'r-1','recording_id':'r','track_id':1,'samples':[{'time':0,'bbox':[10,20,40,90],'confidence':.9}]})
+        store.put('tracks',{'id':'other-2','recording_id':'other','track_id':2,'samples':[]})
+        result=self.client.get('/api/recordings/r/tracking')
+        self.assertEqual(result.status_code,200)
+        self.assertEqual([t['id'] for t in result.json()['tracks']],['r-1'])
+        self.assertEqual(result.json()['width'],1280)
+        self.assertEqual(result.json()['tracks'][0]['samples'][0]['bbox'],[10,20,40,90])
+        self.assertEqual(self.client.get('/api/recordings/missing/tracking').status_code,404)
+
     def test_upload_rejects_non_mp4_and_missing_capture_time(self):
         response = self.client.post('/api/upload', files={'file': ('bad.txt', b'hello', 'text/plain')},
                                     data={'task': 'walking', 'captured_at': '2026-10-17T10:00:00Z'})
